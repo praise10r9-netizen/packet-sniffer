@@ -8,6 +8,19 @@
 #include <netinet/udp.h>
 #include <linux/if_ether.h>
 #include <linux/if_packet.h>
+#define MAX_TRACKED_IPS 100
+
+struct syn_tracker
+{
+  unsigned int ip;
+  int syn_count;
+};
+
+
+
+struct syn_tracker trackers[MAX_TRACKED_IPS];
+
+void detect_syn_scan(unsigned int source_ip);
 
 void print_ethernet_header(unsigned char *buffer)
 {
@@ -66,6 +79,11 @@ void print_tcp_header(unsigned char* buffer)
   printf("FIN: %d\n", tcp->fin);
   printf("RST: %d\n", tcp->rst);
   
+  if(tcp->syn == 1 && tcp->ack == 0)
+  {
+    detect_syn_scan(ip->saddr);
+  }
+  
 }
 
 void print_udp_header(unsigned char *buffer)
@@ -81,6 +99,31 @@ void print_udp_header(unsigned char *buffer)
   printf("Destination Port: %d\n", ntohs(udp->dest));
   printf("Length: %d\n", ntohs(udp->len));
 }
+
+void detect_syn_scan(unsigned int source_ip)
+{
+  for(int i =0; i<MAX_TRACKED_IPS; i++)
+  {
+    if(trackers[i].ip == source_ip)
+    {
+      trackers[i].syn_count++;
+      if(trackers[i].syn_count > 20)
+      {
+        struct in_addr addr;
+        addr.s_addr = source_ip;
+        printf("\n*** Possible SYN Scan Detected from %s ***\n",inet_ntoa(addr));
+      }
+      return;
+    }
+    if(trackers[i].ip == 0)
+    {
+      trackers[i].ip = source_ip;
+      trackers[i].syn_count = 1;
+      return;
+    }
+  }
+}
+
 int main()
 {
  unsigned char buffer[65536];
@@ -93,6 +136,7 @@ int main()
     return 1;
   }
   printf("Packet sniffer started...\n");
+  memset(trackers,0,sizeof(trackers));
   while(1)
   {
     int data_size;
