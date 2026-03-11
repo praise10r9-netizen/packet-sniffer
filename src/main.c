@@ -22,6 +22,7 @@ void print_ethernet_header(unsigned char *buffer)
   
   printf("Protocol: %u\n",ntohs(eth->h_proto));
 }
+
 void print_ip_header(unsigned char *buffer)
 {
   struct iphdr *ip = (struct iphdr*)(buffer + sizeof(struct ethhdr));
@@ -39,6 +40,46 @@ void print_ip_header(unsigned char *buffer)
   
   printf("Destination IP: %s\n",inet_ntoa(dest.sin_addr));
   printf("Protocol: %d\n",ip->protocol);
+}
+
+void print_tcp_header(unsigned char* buffer)
+{
+  struct iphdr *ip = (struct iphdr*)(buffer + sizeof(struct ethhdr));
+  
+  unsigned short iphdrlen = ip->ihl * 4;
+  
+  struct tcphdr *tcp = (struct tcphdr*) (buffer + sizeof(struct ethhdr) + iphdrlen);
+  
+  printf("\nTCP Header\n");
+  
+  printf("Source Port: %u\n", ntohs(tcp->source));
+  
+  printf("Destination Port: %u\n", ntohs(tcp->dest));
+  
+  printf("Sequence Number: %u\n", ntohl(tcp->seq));
+  
+  printf("Acknowledgement Number: %u\n", ntohl(tcp->ack_seq));
+  
+  printf("Flags:\n");
+  printf("SYN: %d\n", tcp->syn);
+  printf("ACK: %d\n", tcp->ack);
+  printf("FIN: %d\n", tcp->fin);
+  printf("RST: %d\n", tcp->rst);
+  
+}
+
+void print_udp_header(unsigned char *buffer)
+{
+  struct iphdr *ip = (struct iphdr*)(buffer + sizeof(struct ethhdr));
+  
+  unsigned short iphdrlen = ip-> ihl * 4;
+  
+  struct udphdr *udp = (struct udphdr*)(buffer + sizeof(struct ethhdr) + iphdrlen);
+  
+  printf("\nUDP Header\n");
+  printf("Source Port: %d\n", ntohs(udp->source));
+  printf("Destination Port: %d\n", ntohs(udp->dest));
+  printf("Length: %d\n", ntohs(udp->len));
 }
 int main()
 {
@@ -65,6 +106,22 @@ int main()
     
     print_ethernet_header(buffer);
     print_ip_header(buffer);
+    
+    struct iphdr *ip = (struct iphdr*)(buffer + sizeof(struct ethhdr));
+    
+    switch(ip->protocol)
+    {
+      case 6:
+      	print_tcp_header(buffer);
+      	break;
+      case 17:
+      	print_udp_header(buffer);
+      	break;
+      	
+      default:
+      	printf("\nOther Protocol\n");
+      	break;
+    }
   }
   return 0;
 }
