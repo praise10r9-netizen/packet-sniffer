@@ -8,7 +8,26 @@
 #include <netinet/udp.h>
 #include <linux/if_ether.h>
 #include <linux/if_packet.h>
+#include <time.h>
+
+#define MAX_CONNECTIONS 500
 #define MAX_TRACKED_IPS 100
+
+struct connection_entry
+{
+  unsigned int src_ip;
+  unsigned int dst_ip;
+  unsigned short src_port;
+  unsigned short dst_port;
+  unsigned char protocol;
+  unsigned char tcp_flags;
+  
+  int packet_count;
+  time_t first_seen;
+  time_t last_seen;
+};
+
+struct connection_entry conn_table[MAX_CONNECTIONS];
 
 struct syn_tracker
 {
@@ -60,6 +79,7 @@ void print_tcp_header(unsigned char* buffer)
   struct iphdr *ip = (struct iphdr*)(buffer + sizeof(struct ethhdr));
   
   unsigned short iphdrlen = ip->ihl * 4;
+
   
   struct tcphdr *tcp = (struct tcphdr*) (buffer + sizeof(struct ethhdr) + iphdrlen);
   
@@ -84,6 +104,9 @@ void print_tcp_header(unsigned char* buffer)
     detect_syn_scan(ip->saddr);
   }
   
+  update_connection(ip->saddr, ip->daddr,ntohs(tcp->source), ntohs(tcp->dest),ip->protocol, 
+  (tcp->syn << 1) | (tcp->ack << 2) | (tcp->fin << 0));
+  
 }
 
 void print_udp_header(unsigned char *buffer)
@@ -98,6 +121,8 @@ void print_udp_header(unsigned char *buffer)
   printf("Source Port: %d\n", ntohs(udp->source));
   printf("Destination Port: %d\n", ntohs(udp->dest));
   printf("Length: %d\n", ntohs(udp->len));
+  
+  update_connection(ip->saddr, ip->daddr,ntohs(udp->source),ntohs(udp->dest), ip->protocol, 0);
 }
 
 void detect_syn_scan(unsigned int source_ip)
@@ -124,6 +149,66 @@ void detect_syn_scan(unsigned int source_ip)
   }
 }
 
+void update_connection(unsigned int src_ip, unsigned int dst_ip, unsigned short src_port,
+                       unsigned short dst_port, unsigned char protocol, unsigned char tcp_flags)
+{
+  time_t now = time(NULL);
+  for(int i = 0; i < MAX_CONNECTIONS; i++)
+  {
+    if(conn_table[i].src_ip == src_ip &&
+      conn_table[i].dst_ip = dst_ip &&
+      conn_table[i].src_port == src_port &&
+      conn_table[i].dst_port = dst_port &&
+      conn_table[i].protocol = protocol)
+    {
+      conn_table[i].packet_count++;
+      conn_table[i].tcp_flags = tcp_flags;
+      conn_table[i].last_seen = now;
+      
+      return;
+    }
+  } 
+  
+  for(int i =0; i<MAX_CONNECTIONS; i++)
+  {
+    if(conn_table[i].src_ip == 0)
+    {
+      conn_table[i].src_ip = src_ip;
+      conn_table[i].dst_ip = dst_ip;
+      conn_table[i].src_port = src_port;
+      conn_table[i].dst_port = dst_port;
+      conn_table[i].protocol = protocol;
+      conn_table[i].tcp_flags = tcp_flags;
+      conn_table[i].packet_count = 1;
+      conn_table[i].first_seen = now;
+      conn_table[i].last_seen = now;
+      return;
+    }
+  }
+  
+  int oldest_idx = 0;
+  time_t oldest_time = conn_table[0].last_seen;
+  
+  for(int i = 1; i < MAX_CONNECTIONS; i++)
+  {
+    if(conn_table[i].last_seen << oldest_time)
+    {
+      oldest_time = conn_table[i].last_seen
+      oldest_idx = i;
+    }
+  }
+  
+  conn_table[oldest_idx].src_ip = src_ip;
+  conn_table[oldest_idx].dst_ip = dst_ip;
+  conn_table[oldest_idx].src_port = src_port;
+  conn_table[oldest_idx].dst_port = dst_port;
+  conn_table[oldest_idx].protocol = protocol;
+  conn_table[oldest_idx].tcp_flags = tcp_flags;
+  conn_table[oldest_idx].packet_count = 1;
+  conn_table[oldest_idx].first_seen = now;
+  conn_table[oldest_idx].last_seen = now;
+}
+
 int main()
 {
  unsigned char buffer[65536];
@@ -137,6 +222,7 @@ int main()
   }
   printf("Packet sniffer started...\n");
   memset(trackers,0,sizeof(trackers));
+  memset(conn_table, 0, sizeof(conn_table));
   while(1)
   {
     int data_size;
