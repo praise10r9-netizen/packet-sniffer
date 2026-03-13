@@ -41,6 +41,9 @@ struct syn_tracker trackers[MAX_TRACKED_IPS];
 
 void detect_syn_scan(unsigned int source_ip);
 
+void update_connection(unsigned int src_ip, unsigned int dst_ip, unsigned short src_port,
+                       unsigned short dst_port, unsigned char protocol, unsigned char tcp_flags);
+
 void print_ethernet_header(unsigned char *buffer)
 {
   struct ethhdr *eth = (struct ethhdr*)buffer;
@@ -156,10 +159,10 @@ void update_connection(unsigned int src_ip, unsigned int dst_ip, unsigned short 
   for(int i = 0; i < MAX_CONNECTIONS; i++)
   {
     if(conn_table[i].src_ip == src_ip &&
-      conn_table[i].dst_ip = dst_ip &&
+      conn_table[i].dst_ip == dst_ip &&
       conn_table[i].src_port == src_port &&
-      conn_table[i].dst_port = dst_port &&
-      conn_table[i].protocol = protocol)
+      conn_table[i].dst_port ==dst_port &&
+      conn_table[i].protocol == protocol)
     {
       conn_table[i].packet_count++;
       conn_table[i].tcp_flags = tcp_flags;
@@ -191,9 +194,9 @@ void update_connection(unsigned int src_ip, unsigned int dst_ip, unsigned short 
   
   for(int i = 1; i < MAX_CONNECTIONS; i++)
   {
-    if(conn_table[i].last_seen << oldest_time)
+    if(conn_table[i].last_seen < oldest_time)
     {
-      oldest_time = conn_table[i].last_seen
+      oldest_time = conn_table[i].last_seen;
       oldest_idx = i;
     }
   }
@@ -225,6 +228,9 @@ int main()
   memset(conn_table, 0, sizeof(conn_table));
   while(1)
   {
+    static int counter = 0;
+    counter++;
+    
     int data_size;
     data_size = recvfrom(sock_raw, buffer, sizeof(buffer),0,NULL,NULL);
     if(data_size < 0)
@@ -236,7 +242,6 @@ int main()
     
     print_ethernet_header(buffer);
     print_ip_header(buffer);
-    
     struct iphdr *ip = (struct iphdr*)(buffer + sizeof(struct ethhdr));
     
     switch(ip->protocol)
@@ -252,6 +257,27 @@ int main()
       	printf("\nOther Protocol\n");
       	break;
     }
+    
+  if(counter % 50 == 0)
+  {
+    printf("\n === connection Table === \n");
+  
+  
+  for(int i = 0; i < MAX_CONNECTIONS; i++)
+  {
+    if(conn_table[i].src_ip != 0)
+    {
+      struct in_addr src, dst;
+      src.s_addr = conn_table[i].src_ip;
+      dst.s_addr = conn_table[i].dst_ip;
+      
+      printf("%s:%d -> %s:%d, Proto: %d, Packets: %d\n", inet_ntoa(src), conn_table[i].src_port,
+      inet_ntoa(dst), conn_table[i].dst_port,conn_table[i].protocol, conn_table[i].packet_count);
+      }
+    } 
   }
+  }
+  
+  
   return 0;
 }
