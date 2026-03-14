@@ -13,6 +13,11 @@
 #define MAX_CONNECTIONS 500
 #define MAX_TRACKED_IPS 100
 
+#define TCP_STATE_SYN_SENT 1
+#define TCP_STATE_SYN_ACK 2
+#define TCP_STATE_ESTABLISHED 3
+#define TCP_STATE_FINISHED 4
+
 struct connection_entry
 {
   unsigned int src_ip;
@@ -21,7 +26,7 @@ struct connection_entry
   unsigned short dst_port;
   unsigned char protocol;
   unsigned char tcp_flags;
-  
+  int tcp_state;
   int packet_count;
   time_t first_seen;
   time_t last_seen;
@@ -40,7 +45,7 @@ struct syn_tracker
 struct syn_tracker trackers[MAX_TRACKED_IPS];
 
 void detect_syn_scan(unsigned int source_ip);
-
+void detect_syn_flood();
 void update_connection(unsigned int src_ip, unsigned int dst_ip, unsigned short src_port,
                        unsigned short dst_port, unsigned char protocol, unsigned char tcp_flags);
 
@@ -110,6 +115,8 @@ void print_tcp_header(unsigned char* buffer)
   update_connection(ip->saddr, ip->daddr,ntohs(tcp->source), ntohs(tcp->dest),ip->protocol, 
   (tcp->syn << 1) | (tcp->ack << 2) | (tcp->fin << 0));
   
+  detect_syn_flood();
+  
 }
 
 void print_udp_header(unsigned char *buffer)
@@ -126,6 +133,7 @@ void print_udp_header(unsigned char *buffer)
   printf("Length: %d\n", ntohs(udp->len));
   
   update_connection(ip->saddr, ip->daddr,ntohs(udp->source),ntohs(udp->dest), ip->protocol, 0);
+   detect_syn_flood();
 }
 
 void detect_syn_scan(unsigned int source_ip)
@@ -210,8 +218,39 @@ void update_connection(unsigned int src_ip, unsigned int dst_ip, unsigned short 
   conn_table[oldest_idx].packet_count = 1;
   conn_table[oldest_idx].first_seen = now;
   conn_table[oldest_idx].last_seen = now;
+  
+  if(protocol == 6)
+  {
+    if(tcp_flags & 0x02)
+    	conn_table[i].tcp_state = TCP_STATE_SYN_SENT;
+    
+    if((tcp_flags & 0x12) == 0x12)
+    	conn_table[i].tcp_state = TCP_STATE_SYN_ACK;
+    
+    if(tcp_flags & 0x10)
+    	conn_table[i].tcp_state = TCP_STATE_ESTABLISHED;
+    	
+    if(tcp_flags & 0x01)
+    	conn_table[i].tcp_state = TCP_STATE_FINISHED;
+  }
 }
 
+void detect_syn_flood()
+{
+  int half_open = 0;
+  for(int i=0; i<MAX_CONNECTIONS; i++)
+  {
+     if(conn_table[i].protocol == 6 && conn_table[i].tcp_state == TCP_STATE_SYN_SENT)
+     {
+       half_open++;
+     }
+  }
+  if(half_open > 50)
+  {
+    printf("\n!!!POSSIBLE SYN FLOOD DETECTED!!!\n");
+    printf("Half-open connections: %d\n",half_open);
+  }
+}
 int main()
 {
  unsigned char buffer[65536];
