@@ -87,7 +87,7 @@ void print_tcp_header(unsigned char* buffer)
   struct iphdr *ip = (struct iphdr*)(buffer + sizeof(struct ethhdr));
   
   unsigned short iphdrlen = ip->ihl * 4;
-
+  unsigned char flags = 0;
   
   struct tcphdr *tcp = (struct tcphdr*) (buffer + sizeof(struct ethhdr) + iphdrlen);
   
@@ -107,13 +107,17 @@ void print_tcp_header(unsigned char* buffer)
   printf("FIN: %d\n", tcp->fin);
   printf("RST: %d\n", tcp->rst);
   
+  if(tcp->syn) flags |= 0x02;
+  if(tcp->ack) flags |= 0x10;
+  if(tcp->fin) flags |= 0x01;
+  
   if(tcp->syn == 1 && tcp->ack == 0)
   {
     detect_syn_scan(ip->saddr);
   }
   
   update_connection(ip->saddr, ip->daddr,ntohs(tcp->source), ntohs(tcp->dest),ip->protocol, 
-  (tcp->syn << 1) | (tcp->ack << 2) | (tcp->fin << 0));
+  flags);
   
   detect_syn_flood();
   
